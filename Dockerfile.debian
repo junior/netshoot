@@ -34,8 +34,12 @@ RUN git clone --depth 1 -b "v${GRPCURL_VERSION}" https://github.com/fullstorydev
 
 # ctop's go.mod has replace directives (no go install); its docker client library is
 # bumped to a current one, which drops the 2020-era docker/containerd module tree.
+# The runc connector is dropped: ctop's code needs the runc 1.0 libcontainer API, whose
+# module carries known CVEs and cannot be upgraded (the API was removed in runc 1.1).
+# The docker connector, the one used in practice, is unaffected.
 RUN git clone --depth 1 -b "v${CTOP_VERSION}" https://github.com/bcicen/ctop /src/ctop \
  && cd /src/ctop \
+ && rm connector/runc.go connector/collector/runc.go \
  && go get github.com/fsouza/go-dockerclient@latest \
       github.com/opencontainers/selinux@latest github.com/sirupsen/logrus@latest \
  && go mod tidy \
@@ -45,6 +49,7 @@ RUN git clone --depth 1 -b "v${CTOP_VERSION}" https://github.com/bcicen/ctop /sr
 RUN git clone --depth 1 -b "v${TERMSHARK_VERSION}" https://github.com/gcla/termshark /src/termshark \
  && cd /src/termshark \
  && go get golang.org/x/crypto@latest golang.org/x/net@latest golang.org/x/sys@latest golang.org/x/text@latest \
+      golang.org/x/image@latest github.com/sirupsen/logrus@latest gopkg.in/yaml.v3@latest github.com/antchfx/xpath@latest \
  && go mod tidy \
  && go build -o /out/termshark ./cmd/termshark
 
