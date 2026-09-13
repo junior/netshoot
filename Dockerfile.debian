@@ -78,6 +78,7 @@ FROM debian:trixie-slim
 #   liboping -> oping ; scapy -> python3-scapy ; trippy is packaged (binary name: trip).
 #   libc6-compat is not needed on glibc. openssh -> openssh-client (no sshd in this image).
 RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     apache2-utils \
     bash \
