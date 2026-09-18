@@ -23,7 +23,16 @@ ARG CTOP_VERSION CALICOCTL_VERSION TERMSHARK_VERSION GRPCURL_VERSION FORTIO_VERS
 ARG TARGETARCH
 ENV GOFLAGS=-trimpath CGO_ENABLED=0 GOBIN=/out
 
-RUN go install "fortio.org/fortio@v${FORTIO_VERSION}"
+# fortio's release pins golang.org/x/image and grpc versions with known CVEs; bump them.
+# fortio reads its version from the Go build info, so the bump is committed and the tag
+# moved onto it: the binary still reports the plain release version.
+RUN git clone --depth 1 -b "v${FORTIO_VERSION}" https://github.com/fortio/fortio /src/fortio \
+ && cd /src/fortio \
+ && go get golang.org/x/image@latest golang.org/x/net@latest google.golang.org/grpc@latest \
+ && go mod tidy \
+ && git -c user.name=build -c user.email=build@localhost commit -qam "bump x/image, x/net, grpc" \
+ && git tag -f "v${FORTIO_VERSION}" \
+ && go build -o /out/fortio .
 
 # grpcurl's release pins golang.org/x/net and grpc versions with known CVEs; bump them.
 RUN git clone --depth 1 -b "v${GRPCURL_VERSION}" https://github.com/fullstorydev/grpcurl /src/grpcurl \
@@ -53,8 +62,12 @@ RUN git clone --depth 1 -b "v${TERMSHARK_VERSION}" https://github.com/gcla/terms
  && go mod tidy \
  && go build -o /out/termshark ./cmd/termshark
 
-# calico is a monorepo without /v3 module paths, so it is built from a checkout.
+# calico is a monorepo without /v3 module paths, so it is built from a checkout; its
+# x/crypto, grpc and etcd client pins carry known CVEs and are bumped first.
 RUN git clone --depth 1 -b "v${CALICOCTL_VERSION}" https://github.com/projectcalico/calico /src/calico \
+ && cd /src/calico \
+ && go get golang.org/x/crypto@latest golang.org/x/net@latest google.golang.org/grpc@latest \
+      go.etcd.io/etcd/client/pkg/v3@latest go.etcd.io/etcd/client/v3@latest go.etcd.io/etcd/api/v3@latest \
  && cd /src/calico/calicoctl \
  && go build -ldflags "-X github.com/projectcalico/calico/pkg/buildinfo.Version=v${CALICOCTL_VERSION} \
       -X github.com/projectcalico/calico/pkg/buildinfo.GitRevision=v${CALICOCTL_VERSION}" \
