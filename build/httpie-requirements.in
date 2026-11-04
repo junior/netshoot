@@ -1,0 +1,2 @@
+# Compiled into httpie-requirements.txt for the Debian image (see Dockerfile.debian).
+httpie==3.2.4
