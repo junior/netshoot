@@ -1,14 +1,19 @@
 # Debian variant of netshoot.
 #
-# One difference from the Alpine image, about CVE hygiene:
+# Two differences from the Alpine image, both about CVE hygiene:
 #   * The pre-built tools (ctop, termshark, grpcurl, fortio) are compiled
 #     from source with the current Go toolchain instead of downloading their release
 #     binaries. The release binaries were built years ago (ctop with Go 1.18, 2022)
 #     and carry the vulnerable Go stdlib/x-libraries of their day, which is where
 #     almost all critical/high scanner findings on this image come from.
+#   * httpie comes from PyPI with its current dependencies, pinned with hashes, in a
+#     venv at /opt/httpie: Debian's httpie brings requests, urllib3 and certifi versions
+#     with open advisories, and depends on pip, which brings wheel. wheel and setuptools
+#     carry advisories too; they and pip are left out.
 #
-# Everything else mirrors the Alpine image: same tools (Debian package names), same
-# zsh/oh-my-zsh/powerlevel10k environment and pins, same MOTD, root user, CMD zsh.
+# Everything else mirrors the Alpine image: same tools (Debian package names, but no pip or
+# setuptools), same zsh/oh-my-zsh/powerlevel10k environment and pins, same MOTD, root user,
+# CMD zsh.
 
 ARG CTOP_VERSION=0.7.7
 ARG TERMSHARK_VERSION=2.4.0
@@ -72,6 +77,18 @@ RUN case "${TARGETARCH}" in \
  && echo "${WS_SHA}  /out/websocat" | sha256sum -c - \
  && chmod +x /out/websocat
 
+# httpie and its dependencies, pinned with hashes in build/httpie-requirements.txt (the command
+# that regenerates it is at its top). Wheels only; pip is removed once they are installed.
+FROM debian:trixie-slim AS httpie
+COPY build/httpie-requirements.txt /tmp/httpie-requirements.txt
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3-venv \
+ && python3 -m venv /opt/httpie \
+ && /opt/httpie/bin/pip install --no-cache-dir --no-deps --require-hashes --only-binary :all: \
+      -r /tmp/httpie-requirements.txt \
+ && /opt/httpie/bin/pip uninstall -y pip \
+ && /opt/httpie/bin/http --version
+
 FROM debian:trixie-slim
 
 # Debian names of the Alpine packages; alphabetical, like the Alpine list.
@@ -80,6 +97,7 @@ FROM debian:trixie-slim
 #   mtr -> mtr-tiny (plain mtr pulls GTK) ; net-snmp-tools -> snmp ; nmap-nping is inside nmap ;
 #   liboping -> oping ; scapy -> python3-scapy ; trippy is packaged (binary name: trip).
 #   libc6-compat is not needed on glibc. openssh -> openssh-client (no sshd in this image).
+#   httpie -> the httpie stage above; py3-pip and py3-setuptools are left out.
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -99,7 +117,6 @@ RUN apt-get update \
     file \
     fping \
     git \
-    httpie \
     iftop \
     inetutils-telnet \
     iperf \
@@ -126,9 +143,7 @@ RUN apt-get update \
     openssh-client \
     openssl \
     procps \
-    python3-pip \
     python3-scapy \
-    python3-setuptools \
     snmp \
     socat \
     speedtest-cli \
@@ -150,14 +165,15 @@ COPY --from=builder /out/grpcurl   /usr/local/bin/grpcurl
 COPY --from=builder /out/fortio    /usr/local/bin/fortio
 COPY --from=builder /out/websocat  /usr/local/bin/websocat
 COPY build/smoke.sh /usr/local/bin/netshoot-smoke
+COPY --from=httpie /opt/httpie /opt/httpie
 
 # Setting User and Home
 USER root
 WORKDIR /root
 ENV HOSTNAME=netshoot
 
-# ZSH Themes from the same pinned tarballs as the Alpine image, the MOTD version, and the
-# permission fixes for OpenShift and tshark
+# ZSH Themes from the same pinned tarballs as the Alpine image, the MOTD version, the httpie
+# commands, and the permission fixes for OpenShift and tshark
 ARG VERSION=dev
 ARG OMZ_SHA=b509b1c6ed0c1ba37de12cbd37f30b2b2f61193a
 ARG ZSH_AUTOSUGGESTIONS_VERSION=0.7.1
@@ -173,6 +189,7 @@ RUN curl -fsSL "https://github.com/ohmyzsh/ohmyzsh/archive/${OMZ_SHA}.tar.gz" | 
  && mv "/tmp/powerlevel10k-${POWERLEVEL10K_VERSION}" /root/.oh-my-zsh/custom/themes/powerlevel10k \
  && sed "s/__VERSION__/${VERSION}/g" /root/motd.template > /root/motd \
  && rm /root/motd.template \
+ && ln -s /opt/httpie/bin/http /opt/httpie/bin/https /opt/httpie/bin/httpie /usr/local/bin/ \
  && chmod -R g=u /root \
  && chmod +x /usr/local/bin/netshoot-smoke \
  && chown root:root /usr/bin/dumpcap
