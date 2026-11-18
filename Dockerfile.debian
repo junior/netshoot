@@ -81,6 +81,8 @@ RUN case "${TARGETARCH}" in \
 
 # httpie and its dependencies, pinned with hashes in build/httpie-requirements.txt (the command
 # that regenerates it is at its top). Wheels only; pip is removed once they are installed.
+# certifi's own CA bundle becomes a link to the system store, as Debian's certifi does, so CAs
+# added to /etc/ssl/certs/ca-certificates.crt (a company CA in a derived image) apply to httpie.
 FROM debian:trixie-slim AS httpie
 COPY build/httpie-requirements.txt /tmp/httpie-requirements.txt
 RUN apt-get update \
@@ -89,6 +91,7 @@ RUN apt-get update \
  && /opt/httpie/bin/pip install --no-cache-dir --no-deps --require-hashes --only-binary :all: \
       -r /tmp/httpie-requirements.txt \
  && /opt/httpie/bin/pip uninstall -y pip \
+ && ln -sf /etc/ssl/certs/ca-certificates.crt /opt/httpie/lib/python3.13/site-packages/certifi/cacert.pem \
  && /opt/httpie/bin/http --version
 
 FROM debian:trixie-slim
